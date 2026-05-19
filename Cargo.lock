@@ -203,6 +203,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bp256"
+version = "0.6.1"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder 0.13.1",
+ "sha2",
+]
+
+[[package]]
+name = "bp384"
+version = "0.6.0"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder 0.13.1",
+ "sha2",
+]
+
+[[package]]
 name = "buffer-redux"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1333,7 +1353,7 @@ checksum = "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b"
 dependencies = [
  "ecdsa",
  "elliptic-curve",
- "primeorder",
+ "primeorder 0.13.6",
  "sha2",
 ]
 
@@ -1345,7 +1365,7 @@ checksum = "fe42f1670a52a47d448f14b6a5c61dd78fce51856e68edaa38f7ae3a46b8d6b6"
 dependencies = [
  "ecdsa",
  "elliptic-curve",
- "primeorder",
+ "primeorder 0.13.6",
  "sha2",
 ]
 
@@ -1358,7 +1378,7 @@ dependencies = [
  "base16ct",
  "ecdsa",
  "elliptic-curve",
- "primeorder",
+ "primeorder 0.13.6",
  "rand_core",
  "sha2",
 ]
@@ -1396,6 +1416,8 @@ dependencies = [
  "bitfields",
  "block-padding",
  "blowfish",
+ "bp256",
+ "bp384",
  "buffer-redux",
  "byteorder",
  "bytes",
@@ -1559,6 +1581,13 @@ checksum = "865724d4dbe39d9f3dd3b52b88d859d66bcb2d6a0acfd5ea68a65fb66d4bdc1c"
 dependencies = [
  "env_logger",
  "log",
+]
+
+[[package]]
+name = "primeorder"
+version = "0.13.1"
+dependencies = [
+ "elliptic-curve",
 ]
 
 [[package]]

@@ -85,15 +85,15 @@ pub enum EcdhPublicParams {
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
-    #[cfg_attr(test, proptest(skip))]
     Brainpool256 {
-        p: Mpi,
+        #[cfg_attr(test, proptest(strategy = "tests::ecdh_bp256_gen()"))]
+        p: elliptic_curve::PublicKey<bp256::BrainpoolP256r1>,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
-    #[cfg_attr(test, proptest(skip))]
     Brainpool384 {
-        p: Mpi,
+        #[cfg_attr(test, proptest(strategy = "tests::ecdh_bp384_gen()"))]
+        p: elliptic_curve::PublicKey<bp384::BrainpoolP384r1>,
         hash: HashAlgorithm,
         alg_sym: SymmetricKeyAlgorithm,
     },
@@ -149,10 +149,12 @@ impl Serialize for EcdhPublicParams {
                 Some((hash, alg_sym, &EcdhKdfType::Native))
             }
             Self::Brainpool256 { p, hash, alg_sym } => {
+                let p = Mpi::from_slice(p.to_sec1_bytes().as_ref());
                 p.to_writer(writer)?;
                 Some((hash, alg_sym, &EcdhKdfType::Native))
             }
             Self::Brainpool384 { p, hash, alg_sym } => {
+                let p = Mpi::from_slice(p.to_sec1_bytes().as_ref());
                 p.to_writer(writer)?;
                 Some((hash, alg_sym, &EcdhKdfType::Native))
             }
@@ -224,10 +226,12 @@ impl Serialize for EcdhPublicParams {
                 sum += p.write_len();
             }
             Self::Brainpool256 { p, .. } => {
+                let p = Mpi::from_slice(p.to_sec1_bytes().as_ref());
                 sum += self.curve().oid().len();
                 sum += p.write_len();
             }
             Self::Brainpool384 { p, .. } => {
+                let p = Mpi::from_slice(p.to_sec1_bytes().as_ref());
                 sum += self.curve().oid().len();
                 sum += p.write_len();
             }
@@ -390,8 +394,18 @@ impl EcdhPublicParams {
                 let p = p521::PublicKey::from_sec1_bytes(p.as_ref())?;
                 Ok(EcdhPublicParams::P521 { p, hash, alg_sym })
             }
-            ECCCurve::BrainpoolP256r1 => Ok(EcdhPublicParams::Brainpool256 { p, hash, alg_sym }),
-            ECCCurve::BrainpoolP384r1 => Ok(EcdhPublicParams::Brainpool384 { p, hash, alg_sym }),
+            ECCCurve::BrainpoolP256r1 => {
+                let p = elliptic_curve::PublicKey::<bp256::BrainpoolP256r1>::from_sec1_bytes(
+                    p.as_ref(),
+                )?;
+                Ok(EcdhPublicParams::Brainpool256 { p, hash, alg_sym })
+            }
+            ECCCurve::BrainpoolP384r1 => {
+                let p = elliptic_curve::PublicKey::<bp384::BrainpoolP384r1>::from_sec1_bytes(
+                    p.as_ref(),
+                )?;
+                Ok(EcdhPublicParams::Brainpool384 { p, hash, alg_sym })
+            }
             ECCCurve::BrainpoolP512r1 => Ok(EcdhPublicParams::Brainpool512 { p, hash, alg_sym }),
             _ => bail!("unexpected ecdh curve: {:?}", curve),
         }
@@ -434,6 +448,20 @@ pub(super) mod tests {
         pub fn ecdh_p521_gen()(seed: u64) -> elliptic_curve::PublicKey<p521::NistP521> {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             elliptic_curve::SecretKey::<p521::NistP521>::random(&mut rng).public_key()
+        }
+    }
+
+    proptest::prop_compose! {
+        pub fn ecdh_bp256_gen()(seed: u64) -> elliptic_curve::PublicKey<bp256::BrainpoolP256r1> {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp256::BrainpoolP256r1>::random(&mut rng).public_key()
+        }
+    }
+
+    proptest::prop_compose! {
+        pub fn ecdh_bp384_gen()(seed: u64) -> elliptic_curve::PublicKey<bp384::BrainpoolP384r1> {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp384::BrainpoolP384r1>::random(&mut rng).public_key()
         }
     }
 

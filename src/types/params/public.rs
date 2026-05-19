@@ -236,9 +236,12 @@ impl PublicParams {
             PublicParams::ECDSA(
                 EcdsaPublicParams::P256 { .. }
                 | EcdsaPublicParams::Secp256k1 { .. }
+                | EcdsaPublicParams::BrainpoolP256 { .. }
                 | EcdsaPublicParams::Unsupported { .. },
             ) => HashAlgorithm::Sha256,
-            PublicParams::ECDSA(EcdsaPublicParams::P384 { .. }) => HashAlgorithm::Sha384,
+            PublicParams::ECDSA(
+                EcdsaPublicParams::P384 { .. } | EcdsaPublicParams::BrainpoolP384 { .. },
+            ) => HashAlgorithm::Sha384,
             PublicParams::ECDSA(EcdsaPublicParams::P521 { .. }) => HashAlgorithm::Sha512,
 
             PublicParams::Ed448(_) => HashAlgorithm::Sha3_512,

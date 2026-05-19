@@ -32,6 +32,14 @@ pub enum EcdsaPublicParams {
         #[cfg_attr(test, proptest(strategy = "tests::k256_pub_gen()"))]
         key: k256::PublicKey,
     },
+    BrainpoolP256 {
+        #[cfg_attr(test, proptest(strategy = "tests::bp256_pub_gen()"))]
+        key: bp256::r1::PublicKey,
+    },
+    BrainpoolP384 {
+        #[cfg_attr(test, proptest(strategy = "tests::bp384_pub_gen()"))]
+        key: bp384::r1::PublicKey,
+    },
     #[cfg_attr(test, proptest(skip))]
     Unsupported {
         curve: ECCCurve,
@@ -56,6 +64,8 @@ impl EcdsaPublicParams {
             Self::P384 { .. } => ECCCurve::P384,
             Self::P521 { .. } => ECCCurve::P521,
             Self::Secp256k1 { .. } => ECCCurve::Secp256k1,
+            Self::BrainpoolP256 { .. } => ECCCurve::BrainpoolP256r1,
+            Self::BrainpoolP384 { .. } => ECCCurve::BrainpoolP384r1,
             Self::Unsupported { curve, .. } => curve.clone(),
         }
     }
@@ -105,6 +115,24 @@ impl EcdsaPublicParams {
                 let public = k256::PublicKey::from_sec1_bytes(&key)?;
                 Ok(EcdsaPublicParams::Secp256k1 { key: public })
             }
+            ECCCurve::BrainpoolP256r1 => {
+                let p = Mpi::try_from_reader(&mut i)?;
+                ensure!(p.len() <= 65, "invalid public key length");
+                let mut key = [0u8; 65];
+                key[..p.len()].copy_from_slice(p.as_ref());
+
+                let public = bp256::r1::PublicKey::from_sec1_bytes(&key)?;
+                Ok(EcdsaPublicParams::BrainpoolP256 { key: public })
+            }
+            ECCCurve::BrainpoolP384r1 => {
+                let p = Mpi::try_from_reader(&mut i)?;
+                ensure!(p.len() <= 97, "invalid public key length");
+                let mut key = [0u8; 97];
+                key[..p.len()].copy_from_slice(p.as_ref());
+
+                let public = bp384::r1::PublicKey::from_sec1_bytes(&key)?;
+                Ok(EcdsaPublicParams::BrainpoolP384 { key: public })
+            }
             _ => {
                 let opaque = if let Some(pub_len) = len {
                     i.take_bytes(pub_len)?.freeze()
@@ -122,6 +150,8 @@ impl EcdsaPublicParams {
             EcdsaPublicParams::P384 { .. } => Some(48),
             EcdsaPublicParams::P521 { .. } => Some(66),
             EcdsaPublicParams::Secp256k1 { .. } => Some(32),
+            EcdsaPublicParams::BrainpoolP256 { .. } => Some(32),
+            EcdsaPublicParams::BrainpoolP384 { .. } => Some(48),
             EcdsaPublicParams::Unsupported { .. } => None,
         }
     }
@@ -129,13 +159,7 @@ impl EcdsaPublicParams {
 
 impl Serialize for EcdsaPublicParams {
     fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
-        let oid = match self {
-            EcdsaPublicParams::P256 { .. } => ECCCurve::P256.oid(),
-            EcdsaPublicParams::P384 { .. } => ECCCurve::P384.oid(),
-            EcdsaPublicParams::P521 { .. } => ECCCurve::P521.oid(),
-            EcdsaPublicParams::Secp256k1 { .. } => ECCCurve::Secp256k1.oid(),
-            EcdsaPublicParams::Unsupported { curve, .. } => curve.oid(),
-        };
+        let oid = self.curve().oid();
 
         writer.write_u8(oid.len().try_into()?)?;
         writer.write_all(&oid)?;
@@ -157,6 +181,14 @@ impl Serialize for EcdsaPublicParams {
                 let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
                 p.to_writer(writer)?;
             }
+            EcdsaPublicParams::BrainpoolP256 { key, .. } => {
+                let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
+                p.to_writer(writer)?;
+            }
+            EcdsaPublicParams::BrainpoolP384 { key, .. } => {
+                let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
+                p.to_writer(writer)?;
+            }
             EcdsaPublicParams::Unsupported { opaque, .. } => {
                 writer.write_all(opaque)?;
             }
@@ -166,13 +198,7 @@ impl Serialize for EcdsaPublicParams {
     }
 
     fn write_len(&self) -> usize {
-        let oid = match self {
-            EcdsaPublicParams::P256 { .. } => ECCCurve::P256.oid(),
-            EcdsaPublicParams::P384 { .. } => ECCCurve::P384.oid(),
-            EcdsaPublicParams::P521 { .. } => ECCCurve::P521.oid(),
-            EcdsaPublicParams::Secp256k1 { .. } => ECCCurve::Secp256k1.oid(),
-            EcdsaPublicParams::Unsupported { curve, .. } => curve.oid(),
-        };
+        let oid = self.curve().oid();
 
         let mut sum = 1;
         sum += oid.len();
@@ -191,6 +217,14 @@ impl Serialize for EcdsaPublicParams {
                 sum += p.write_len();
             }
             EcdsaPublicParams::Secp256k1 { key, .. } => {
+                let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
+                sum += p.write_len();
+            }
+            EcdsaPublicParams::BrainpoolP256 { key, .. } => {
+                let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
+                sum += p.write_len();
+            }
+            EcdsaPublicParams::BrainpoolP384 { key, .. } => {
                 let p = Mpi::from_slice(key.to_encoded_point(false).as_bytes());
                 sum += p.write_len();
             }
@@ -234,6 +268,20 @@ mod tests {
         pub fn k256_pub_gen()(seed: u64) -> k256::PublicKey {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             k256::SecretKey::random(&mut rng).public_key()
+        }
+    }
+
+    proptest::prop_compose! {
+        pub fn bp256_pub_gen()(seed: u64) -> bp256::r1::PublicKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp256::BrainpoolP256r1>::random(&mut rng).public_key()
+        }
+    }
+
+    proptest::prop_compose! {
+        pub fn bp384_pub_gen()(seed: u64) -> bp384::r1::PublicKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp384::BrainpoolP384r1>::random(&mut rng).public_key()
         }
     }
 

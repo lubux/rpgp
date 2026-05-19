@@ -179,7 +179,12 @@ impl SecretKeyParamsBuilder {
                     }
                 }
                 KeyType::ECDSA(curve) => match curve {
-                    ECCCurve::P256 | ECCCurve::P384 | ECCCurve::P521 | ECCCurve::Secp256k1 => {}
+                    ECCCurve::P256
+                    | ECCCurve::P384
+                    | ECCCurve::P521
+                    | ECCCurve::Secp256k1
+                    | ECCCurve::BrainpoolP256r1
+                    | ECCCurve::BrainpoolP384r1 => {}
                     _ => return Err(format!("Curve {} is not supported for ECDSA", curve.name())),
                 },
                 _ => {}
@@ -1102,6 +1107,34 @@ mod tests {
 
         for _ in 0..100 {
             gen_ecdsa_ecdh(&mut rng, ECCCurve::P521, ECCCurve::P521, KeyVersion::V6);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_brainpool_p256_v4() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..50 {
+            gen_ecdsa_ecdh(
+                &mut rng,
+                ECCCurve::BrainpoolP256r1,
+                ECCCurve::BrainpoolP256r1,
+                KeyVersion::V4,
+            );
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn key_gen_ecdsa_brainpool_p384_v4() {
+        let mut rng = &mut ChaCha8Rng::seed_from_u64(0);
+        for _ in 0..50 {
+            gen_ecdsa_ecdh(
+                &mut rng,
+                ECCCurve::BrainpoolP384r1,
+                ECCCurve::BrainpoolP384r1,
+                KeyVersion::V4,
+            );
         }
     }
 

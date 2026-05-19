@@ -494,7 +494,9 @@ pub(crate) fn encrypt<R: rand::CryptoRng + rand::Rng, K: KeyDetails>(
                         EcdhPublicParams::Curve25519Legacy { hash, alg_sym, .. }
                         | EcdhPublicParams::P256 { hash, alg_sym, .. }
                         | EcdhPublicParams::P521 { hash, alg_sym, .. }
-                        | EcdhPublicParams::P384 { hash, alg_sym, .. } => {
+                        | EcdhPublicParams::P384 { hash, alg_sym, .. }
+                        | EcdhPublicParams::Brainpool256 { hash, alg_sym, .. }
+                        | EcdhPublicParams::Brainpool384 { hash, alg_sym, .. } => {
                             if curve.hash_algo()? != *hash || curve.sym_algo()? != *alg_sym {
                                 bail!(
                                     "Unsupported KDF/KEK parameters for {:?} and KeyVersion::V6: {:?}, {:?}",
@@ -943,16 +945,14 @@ impl VerifyingKey for PubKeyInner {
                 ref params @ EcdhPublicParams::Curve25519Legacy { .. }
                 | ref params @ EcdhPublicParams::P256 { .. }
                 | ref params @ EcdhPublicParams::P384 { .. }
-                | ref params @ EcdhPublicParams::P521 { .. },
+                | ref params @ EcdhPublicParams::P521 { .. }
+                | ref params @ EcdhPublicParams::Brainpool256 { .. }
+                | ref params @ EcdhPublicParams::Brainpool384 { .. },
             ) => {
                 bail!("ECDH ({:?}) can not be used for verify operations", params,);
             }
-            PublicParams::ECDH(
-                EcdhPublicParams::Brainpool256 { .. }
-                | EcdhPublicParams::Brainpool384 { .. }
-                | EcdhPublicParams::Brainpool512 { .. },
-            ) => {
-                bail!("ECDH (unsupported: brainpool) can not be used for verify operations");
+            PublicParams::ECDH(EcdhPublicParams::Brainpool512 { .. }) => {
+                bail!("ECDH (unsupported: brainpoolP512r1) can not be used for verify operations");
             }
             PublicParams::ECDH(EcdhPublicParams::Unsupported { ref curve, .. }) => {
                 bail!(

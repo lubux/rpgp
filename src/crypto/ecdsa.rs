@@ -34,6 +34,16 @@ pub enum SecretKey {
         #[cfg_attr(test, proptest(strategy = "tests::key_k256_gen()"))]
         k256::SecretKey,
     ),
+    BrainpoolP256(
+        #[debug("..")]
+        #[cfg_attr(test, proptest(strategy = "tests::key_bp256_gen()"))]
+        bp256::r1::SecretKey,
+    ),
+    BrainpoolP384(
+        #[debug("..")]
+        #[cfg_attr(test, proptest(strategy = "tests::key_bp384_gen()"))]
+        bp384::r1::SecretKey,
+    ),
     #[cfg_attr(test, proptest(skip))]
     Unsupported {
         /// The secret point.
@@ -59,6 +69,12 @@ impl TryFrom<&SecretKey> for EcdsaPublicParams {
                 key: p.public_key(),
             }),
             SecretKey::Secp256k1(ref p) => Ok(EcdsaPublicParams::Secp256k1 {
+                key: p.public_key(),
+            }),
+            SecretKey::BrainpoolP256(ref p) => Ok(EcdsaPublicParams::BrainpoolP256 {
+                key: p.public_key(),
+            }),
+            SecretKey::BrainpoolP384(ref p) => Ok(EcdsaPublicParams::BrainpoolP384 {
                 key: p.public_key(),
             }),
             SecretKey::Unsupported { ref curve, .. } => {
@@ -88,6 +104,14 @@ impl SecretKey {
                 let secret = k256::SecretKey::random(&mut rng);
                 Ok(SecretKey::Secp256k1(secret))
             }
+            ECCCurve::BrainpoolP256r1 => {
+                let secret = bp256::r1::SecretKey::random(&mut rng);
+                Ok(SecretKey::BrainpoolP256(secret))
+            }
+            ECCCurve::BrainpoolP384r1 => {
+                let secret = bp384::r1::SecretKey::random(&mut rng);
+                Ok(SecretKey::BrainpoolP384(secret))
+            }
             _ => unsupported_err!("curve {:?} for ECDSA", curve),
         }
     }
@@ -114,6 +138,16 @@ impl SecretKey {
 
                 Ok(SecretKey::Secp256k1(secret))
             }
+            EcdsaPublicParams::BrainpoolP256 { .. } => {
+                let secret = bp256::r1::SecretKey::from_slice(d.as_ref())?;
+
+                Ok(SecretKey::BrainpoolP256(secret))
+            }
+            EcdsaPublicParams::BrainpoolP384 { .. } => {
+                let secret = bp384::r1::SecretKey::from_slice(d.as_ref())?;
+
+                Ok(SecretKey::BrainpoolP384(secret))
+            }
             EcdsaPublicParams::Unsupported { curve, .. } => {
                 unsupported_err!("curve {:?} for ECDSA", curve.to_string())
             }
@@ -126,6 +160,8 @@ impl SecretKey {
             Self::P384 { .. } => ECCCurve::P384,
             Self::P521 { .. } => ECCCurve::P521,
             Self::Secp256k1 { .. } => ECCCurve::Secp256k1,
+            Self::BrainpoolP256 { .. } => ECCCurve::BrainpoolP256r1,
+            Self::BrainpoolP384 { .. } => ECCCurve::BrainpoolP384r1,
             Self::Unsupported { curve, .. } => curve.clone(),
         }
     }
@@ -136,6 +172,8 @@ impl SecretKey {
             Self::P384 { .. } => Some(48),
             Self::P521 { .. } => Some(66),
             Self::Secp256k1 { .. } => Some(32),
+            Self::BrainpoolP256 { .. } => Some(32),
+            Self::BrainpoolP384 { .. } => Some(48),
             Self::Unsupported { .. } => None,
         }
     }
@@ -146,6 +184,8 @@ impl SecretKey {
             Self::P384(k) => Mpi::from_slice(k.to_bytes().as_ref()),
             Self::P521(k) => Mpi::from_slice(k.to_bytes().as_ref()),
             Self::Secp256k1(k) => Mpi::from_slice(k.to_bytes().as_ref()),
+            Self::BrainpoolP256(k) => Mpi::from_slice(k.to_bytes().as_ref()),
+            Self::BrainpoolP384(k) => Mpi::from_slice(k.to_bytes().as_ref()),
             Self::Unsupported { x, .. } => Mpi::from_slice(x),
         }
     }
@@ -157,6 +197,8 @@ impl SecretKey {
             Self::P384(k) => k.to_bytes().to_vec(),
             Self::P521(k) => k.to_bytes().to_vec(),
             Self::Secp256k1(k) => k.to_bytes().to_vec(),
+            Self::BrainpoolP256(k) => k.to_bytes().to_vec(),
+            Self::BrainpoolP384(k) => k.to_bytes().to_vec(),
             Self::Unsupported { x, .. } => x.clone(),
         }
     }
@@ -216,6 +258,18 @@ impl Signer for SecretKey {
             Self::Secp256k1(secret_key) => {
                 let secret = k256::ecdsa::SigningKey::from(secret_key);
                 let signature: k256::ecdsa::Signature = secret.sign_prehash(digest)?;
+                let (r, s) = signature.split_bytes();
+                (Mpi::from_slice(&r), Mpi::from_slice(&s))
+            }
+            Self::BrainpoolP256(secret_key) => {
+                let secret = bp256::r1::ecdsa::SigningKey::from(secret_key);
+                let signature: bp256::r1::ecdsa::Signature = secret.sign_prehash(digest)?;
+                let (r, s) = signature.split_bytes();
+                (Mpi::from_slice(&r), Mpi::from_slice(&s))
+            }
+            Self::BrainpoolP384(secret_key) => {
+                let secret = bp384::r1::ecdsa::SigningKey::from(secret_key);
+                let signature: bp384::r1::ecdsa::Signature = secret.sign_prehash(digest)?;
                 let (r, s) = signature.split_bytes();
                 (Mpi::from_slice(&r), Mpi::from_slice(&s))
             }
@@ -352,6 +406,46 @@ pub fn verify(
 
             Ok(())
         }
+        EcdsaPublicParams::BrainpoolP256 { key, .. } => {
+            const FLEN: usize = 32;
+            ensure_eq!(sig.len(), 2);
+            let r = sig[0].as_ref();
+            let s = sig[1].as_ref();
+            ensure!(r.len() <= FLEN, "invalid R (len)");
+            ensure!(s.len() <= FLEN, "invalid S (len)");
+            let mut sig_bytes = [0u8; 2 * FLEN];
+
+            // add padding if the values were encoded short
+            sig_bytes[(FLEN - r.len())..FLEN].copy_from_slice(r);
+            sig_bytes[FLEN + (FLEN - s.len())..].copy_from_slice(s);
+
+            let pk = bp256::r1::ecdsa::VerifyingKey::from_affine(key.as_affine().to_owned())?;
+            let sig = bp256::r1::ecdsa::Signature::try_from(&sig_bytes[..])?;
+
+            pk.verify_prehash(hashed, &sig)?;
+
+            Ok(())
+        }
+        EcdsaPublicParams::BrainpoolP384 { key, .. } => {
+            const FLEN: usize = 48;
+            ensure_eq!(sig.len(), 2);
+            let r = sig[0].as_ref();
+            let s = sig[1].as_ref();
+            ensure!(r.len() <= FLEN, "invalid R (len)");
+            ensure!(s.len() <= FLEN, "invalid S (len)");
+            let mut sig_bytes = [0u8; 2 * FLEN];
+
+            // add padding if the values were encoded short
+            sig_bytes[(FLEN - r.len())..FLEN].copy_from_slice(r);
+            sig_bytes[FLEN + (FLEN - s.len())..].copy_from_slice(s);
+
+            let pk = bp384::r1::ecdsa::VerifyingKey::from_affine(key.as_affine().to_owned())?;
+            let sig = bp384::r1::ecdsa::Signature::try_from(&sig_bytes[..])?;
+
+            pk.verify_prehash(hashed, &sig)?;
+
+            Ok(())
+        }
         EcdsaPublicParams::Unsupported { curve, .. } => {
             unsupported_err!("curve {:?} for ECDSA", curve.to_string())
         }
@@ -388,6 +482,20 @@ mod tests {
         pub fn key_k256_gen()(seed: u64) -> k256::SecretKey {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             k256::SecretKey::random(&mut rng)
+        }
+    }
+
+    prop_compose! {
+        pub fn key_bp256_gen()(seed: u64) -> bp256::r1::SecretKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp256::BrainpoolP256r1>::random(&mut rng)
+        }
+    }
+
+    prop_compose! {
+        pub fn key_bp384_gen()(seed: u64) -> bp384::r1::SecretKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp384::BrainpoolP384r1>::random(&mut rng)
         }
     }
 }

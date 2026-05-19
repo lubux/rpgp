@@ -103,6 +103,22 @@ pub enum SecretKey {
         #[cfg_attr(test, proptest(strategy = "tests::key_p521_gen()"))]
         secret: p521::SecretKey,
     },
+
+    /// ECDH with brainpoolP256r1
+    BrainpoolP256 {
+        /// The secret point.
+        #[debug("..")]
+        #[cfg_attr(test, proptest(strategy = "tests::key_bp256_gen()"))]
+        secret: bp256::r1::SecretKey,
+    },
+
+    /// ECDH with brainpoolP384r1
+    BrainpoolP384 {
+        /// The secret point.
+        #[debug("..")]
+        #[cfg_attr(test, proptest(strategy = "tests::key_bp384_gen()"))]
+        secret: bp384::r1::SecretKey,
+    },
 }
 
 impl From<&SecretKey> for EcdhPublicParams {
@@ -132,6 +148,16 @@ impl From<&SecretKey> for EcdhPublicParams {
                 hash,
                 alg_sym,
             },
+            SecretKey::BrainpoolP256 { ref secret } => Self::Brainpool256 {
+                p: secret.public_key(),
+                hash,
+                alg_sym,
+            },
+            SecretKey::BrainpoolP384 { ref secret } => Self::Brainpool384 {
+                p: secret.public_key(),
+                hash,
+                alg_sym,
+            },
         }
     }
 }
@@ -155,6 +181,14 @@ impl SecretKey {
             ECCCurve::P521 => {
                 let secret = p521::SecretKey::random(&mut rng);
                 Ok(SecretKey::P521 { secret })
+            }
+            ECCCurve::BrainpoolP256r1 => {
+                let secret = bp256::r1::SecretKey::random(&mut rng);
+                Ok(SecretKey::BrainpoolP256 { secret })
+            }
+            ECCCurve::BrainpoolP384r1 => {
+                let secret = bp384::r1::SecretKey::random(&mut rng);
+                Ok(SecretKey::BrainpoolP384 { secret })
             }
             _ => unsupported_err!("curve {:?} for ECDH", curve),
         }
@@ -191,10 +225,22 @@ impl SecretKey {
 
                 Ok(SecretKey::P521 { secret })
             }
-            EcdhPublicParams::Brainpool256 { .. }
-            | EcdhPublicParams::Brainpool384 { .. }
-            | EcdhPublicParams::Brainpool512 { .. } => {
-                unsupported_err!("brainpool curve {:?} for ECDH")
+            EcdhPublicParams::Brainpool256 { .. } => {
+                const SIZE: usize = ECCCurve::BrainpoolP256r1.secret_key_length();
+                let raw = pad_key::<SIZE>(d.as_ref())?;
+                let secret =
+                    elliptic_curve::SecretKey::<bp256::BrainpoolP256r1>::from_bytes(&raw.into())?;
+                Ok(SecretKey::BrainpoolP256 { secret })
+            }
+            EcdhPublicParams::Brainpool384 { .. } => {
+                const SIZE: usize = ECCCurve::BrainpoolP384r1.secret_key_length();
+                let raw = pad_key::<SIZE>(d.as_ref())?;
+                let secret =
+                    elliptic_curve::SecretKey::<bp384::BrainpoolP384r1>::from_bytes(&raw.into())?;
+                Ok(SecretKey::BrainpoolP384 { secret })
+            }
+            EcdhPublicParams::Brainpool512 { .. } => {
+                unsupported_err!("brainpool curve {:?} for ECDH", pub_params)
             }
             EcdhPublicParams::Unsupported { ref curve, .. } => {
                 unsupported_err!("curve {:?} for ECDH", curve)
@@ -214,6 +260,8 @@ impl SecretKey {
             Self::P256 { secret, .. } => Mpi::from_slice(&secret.to_bytes()),
             Self::P384 { secret, .. } => Mpi::from_slice(&secret.to_bytes()),
             Self::P521 { secret, .. } => Mpi::from_slice(&secret.to_bytes()),
+            Self::BrainpoolP256 { secret, .. } => Mpi::from_slice(&secret.to_bytes()),
+            Self::BrainpoolP384 { secret, .. } => Mpi::from_slice(&secret.to_bytes()),
         }
     }
 
@@ -223,6 +271,8 @@ impl SecretKey {
             Self::P256 { .. } => ECCCurve::P256,
             Self::P384 { .. } => ECCCurve::P384,
             Self::P521 { .. } => ECCCurve::P521,
+            Self::BrainpoolP256 { .. } => ECCCurve::BrainpoolP256r1,
+            Self::BrainpoolP384 { .. } => ECCCurve::BrainpoolP384r1,
         }
     }
 
@@ -233,6 +283,8 @@ impl SecretKey {
             Self::P256 { secret, .. } => secret.to_bytes().to_vec(),
             Self::P384 { secret, .. } => secret.to_bytes().to_vec(),
             Self::P521 { secret, .. } => secret.to_bytes().to_vec(),
+            Self::BrainpoolP256 { secret, .. } => secret.to_bytes().to_vec(),
+            Self::BrainpoolP384 { secret, .. } => secret.to_bytes().to_vec(),
         }
     }
 }
@@ -306,6 +358,16 @@ impl Decryptor for SecretKey {
             SecretKey::P521 { secret, .. } => {
                 derive_shared_secret_decryption::<p521::NistP521>(data.public_point, secret, 133)?
             }
+            SecretKey::BrainpoolP256 { secret, .. } => derive_shared_secret_decryption::<
+                bp256::BrainpoolP256r1,
+            >(
+                data.public_point, secret, 65
+            )?,
+            SecretKey::BrainpoolP384 { secret, .. } => derive_shared_secret_decryption::<
+                bp384::BrainpoolP384r1,
+            >(
+                data.public_point, secret, 97
+            )?,
         };
 
         // obtain the session key from the shared secret
@@ -621,6 +683,16 @@ pub fn encrypt<R: CryptoRng + Rng>(
             let (public, secret) = derive_shared_secret_encryption::<p521::NistP521, R>(rng, p)?;
             (public, secret, hash, alg_sym)
         }
+        EcdhPublicParams::Brainpool256 { p, hash, alg_sym } => {
+            let (public, secret) =
+                derive_shared_secret_encryption::<bp256::BrainpoolP256r1, R>(rng, p)?;
+            (public, secret, hash, alg_sym)
+        }
+        EcdhPublicParams::Brainpool384 { p, hash, alg_sym } => {
+            let (public, secret) =
+                derive_shared_secret_encryption::<bp384::BrainpoolP384r1, R>(rng, p)?;
+            (public, secret, hash, alg_sym)
+        }
         _ => unsupported_err!("{:?} for ECDH", params),
     };
 
@@ -700,6 +772,8 @@ mod tests {
             ECCCurve::P256,
             ECCCurve::P384,
             ECCCurve::P521,
+            ECCCurve::BrainpoolP256r1,
+            ECCCurve::BrainpoolP384r1,
         ] {
             let mut rng = ChaChaRng::from_seed([0u8; 32]);
 
@@ -735,6 +809,46 @@ mod tests {
 
                     assert_eq!(&plain[..], &decrypted[..]);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_brainpool() {
+        for curve in [ECCCurve::BrainpoolP256r1, ECCCurve::BrainpoolP384r1] {
+            let mut rng = ChaChaRng::from_seed([0u8; 32]);
+
+            let skey = SecretKey::generate(&mut rng, &curve).unwrap();
+            let pub_params: EcdhPublicParams = (&skey).into();
+
+            for text_size in [1usize, 32, 128, 239] {
+                let mut fingerprint = vec![0u8; 20];
+                rng.fill_bytes(&mut fingerprint);
+
+                let mut plain = vec![0u8; text_size];
+                rng.fill_bytes(&mut plain);
+
+                let values = encrypt(&mut rng, &pub_params, &fingerprint, &plain[..]).unwrap();
+
+                let PkeskBytes::Ecdh {
+                    public_point,
+                    encrypted_session_key,
+                } = values
+                else {
+                    panic!("invalid key generated");
+                };
+                let decrypted = skey
+                    .decrypt(EncryptionFields {
+                        public_point: &public_point,
+                        encrypted_session_key: &encrypted_session_key,
+                        fingerprint: &fingerprint,
+                        curve: curve.clone(),
+                        hash: curve.hash_algo().unwrap(),
+                        alg_sym: curve.sym_algo().unwrap(),
+                    })
+                    .unwrap();
+
+                assert_eq!(&plain[..], &decrypted[..]);
             }
         }
     }
@@ -900,6 +1014,20 @@ mod tests {
         pub fn key_k256_gen()(seed: u64) -> k256::SecretKey {
             let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
             k256::SecretKey::random(&mut rng)
+        }
+    }
+
+    prop_compose! {
+        pub fn key_bp256_gen()(seed: u64) -> bp256::r1::SecretKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp256::BrainpoolP256r1>::random(&mut rng)
+        }
+    }
+
+    prop_compose! {
+        pub fn key_bp384_gen()(seed: u64) -> bp384::r1::SecretKey {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+            elliptic_curve::SecretKey::<bp384::BrainpoolP384r1>::random(&mut rng)
         }
     }
 
