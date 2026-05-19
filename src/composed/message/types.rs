@@ -1473,6 +1473,34 @@ mod tests {
         assert_eq!(data, &uncompressed_msg);
     }
 
+    fn brainpool_decrypt_and_verify(key_path: &str, msg_path: &str) {
+        let _ = pretty_env_logger::try_init();
+
+        let (skey, _headers) = SignedSecretKey::from_armor_file(key_path).expect("parse key");
+
+        skey.verify_bindings().expect("verify bindings");
+
+        let (message, _headers) = Message::from_armor_file(msg_path).expect("parse message");
+        let mut decrypted = message.decrypt(&Password::empty(), &skey).expect("decrypt");
+
+        let data = decrypted.as_data_vec().expect("read data");
+        assert_eq!(data, b"hello brainpool");
+
+        decrypted
+            .verify(&skey.primary_key.public_key())
+            .expect("verify inline signature");
+    }
+
+    #[test]
+    fn test_brainpool_p256_decrypt() {
+        brainpool_decrypt_and_verify("./tests/brainpool/p256.key", "./tests/brainpool/p256.msg");
+    }
+
+    #[test]
+    fn test_brainpool_p384_decrypt() {
+        brainpool_decrypt_and_verify("./tests/brainpool/p384.key", "./tests/brainpool/p384.msg");
+    }
+
     #[test]
     fn test_rsa_encryption_seipdv1() {
         let _ = pretty_env_logger::try_init();
